@@ -1,6 +1,6 @@
 # MusicTest-Swift
 
-#1LearningSwiftbasic Music player
+#1 LearningSwiftbasic Music player
 
 - Pick a folder to load mp3 files
 - NSUserDefault to save history musics
