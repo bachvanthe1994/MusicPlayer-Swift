@@ -7,5 +7,4 @@
 - Play/Pause/Restart Music
 - Show music notification in lock screen
 
-
-![alt text](https://raw.githubusercontent.com/bachvanthe1994/MusicTest-Swift/master/Music%20Test/Screenshot/image1.png){:height="650px" width="300px"}
+<img src="https://raw.githubusercontent.com/bachvanthe1994/MusicTest-Swift/master/Music%20Test/Screenshot/image1.png" width="300" height="650">
