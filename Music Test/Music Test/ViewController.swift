@@ -20,7 +20,7 @@ enum PlayType {
 class ViewController: UIViewController {
 
     
-    
+    @IBOutlet weak var toggleButtonPlayOrPauseMusic: UIBarButtonItem!
     @IBOutlet weak var ivMusicThumbnail: UIImageView!
     @IBOutlet weak var lblSongName: UILabel!
     @IBOutlet weak var lblAlbumName: UILabel!
@@ -29,16 +29,17 @@ class ViewController: UIViewController {
     @IBOutlet weak var tableFolderMusic: UITableView!
     @IBOutlet weak var vTabHistory: UIView!
     @IBOutlet weak var tableHistory: UITableView!
-    @IBOutlet weak var lblFolderPath: UILabel!
     @IBOutlet weak var lblMusicCurrentDuration: UILabel!
     @IBOutlet weak var lblMusicTotalDuration: UILabel!
-    @IBOutlet weak var progressMusic: UIProgressView!
+    @IBOutlet weak var progressMusic: UISlider!
+    
+    var repeart = false
     
     var listFolderMusic = [[String: String]]()
     var listHistoryMusic = [[String: String]]()
     var player = AVPlayer()
     var playerTimer: Timer?
-    var playerIndex: Int = 0
+    var playerIndex: Int = -1
     var playType: PlayType = .fromFolder
     
     override func viewDidLoad() {
@@ -51,7 +52,6 @@ class ViewController: UIViewController {
         tableHistory.delegate = self
         tableHistory.dataSource = self
         
-        self.lblFolderPath.text = ""
         resetInterface()
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback)
@@ -60,7 +60,8 @@ class ViewController: UIViewController {
             print(error.localizedDescription)
         }
 
-        reloadTableLog()
+        reloadTableHistory()
+        setupRemoteTransportControls()
     }
     
     func resetInterface() -> Void {
@@ -69,20 +70,92 @@ class ViewController: UIViewController {
         self.lblMusicCurrentDuration.text = "00:00:00"
         self.lblMusicTotalDuration.text = "00:00:00"
         
-        self.progressMusic.progress = 0
         ivMusicThumbnail.image = nil
+        
+        self.progressMusic.maximumValue = 0
+        self.progressMusic.value = 0
     }
     
-    @IBAction func playButtonPressed(_ sender: Any) {
-        playTrack()
+    
+    // MARK: Action
+    @IBAction func previousButtonPressed(_ sender: Any) {
+        previousTrack()
     }
     
-    @IBAction func pauseButtonPressed(_ sender: Any) {
-        pauseTrack()
+    @IBAction func nextButtonPressed(_ sender: Any) {
+        nextTrack()
     }
     
-    @IBAction func restartButtonPressed(_ sender: Any) {
-        restartTrack()
+    @IBAction func toggleButtonPlayOrPauseMusicPressed(_ sender: UIBarButtonItem) {
+        if (player.currentItem != nil) {
+            if (player.rate == 1) {
+                pauseTrack()
+            } else {
+                playTrack()
+            }
+            self.toolbarItems = toolbarItems
+        }
+    }
+    
+    @IBAction func shareCurrentMusic(_ sender: Any) {
+        
+        if (playerIndex == -1) {
+            return
+        }
+        
+        var music: [String: String]? = nil
+        
+        switch playType {
+        case .fromFolder:
+            if (playerIndex<listFolderMusic.count) {
+                music = listFolderMusic[playerIndex]
+            }
+            break
+        default:
+            if (playerIndex<listHistoryMusic.count) {
+                music = listHistoryMusic[playerIndex]
+            }
+            break
+        }
+        if (music==nil) {
+            return
+        }
+        
+        let urlPath = music?["urlPath"]
+        let item = music?["item"]
+        let fullPath = "\(urlPath ?? "")\(item ?? "")"
+        
+        let fileURL = NSURL(fileURLWithPath: fullPath)
+
+        // Create the Array which includes the files you want to share
+        var filesToShare = [Any]()
+
+        // Add the path of the file to the Array
+        filesToShare.append(fileURL)
+
+        // Make the activityViewContoller which shows the share-view
+        let activityViewController = UIActivityViewController(activityItems: filesToShare, applicationActivities: nil)
+
+        // Show the share-view
+        self.present(activityViewController, animated: true, completion: nil)
+    }
+    
+    @IBAction func repeatCurrentMusic(_ sender: UIBarButtonItem) {
+        repeart = !repeart
+        let image = repeart ? "repeat.1" : "repeat"
+        let toolbarItems = self.toolbarItems ?? [UIBarButtonItem]()
+        for toolbarItem in toolbarItems {
+            if (toolbarItems.firstIndex(of: toolbarItem) == 8) {
+                toolbarItem.image = UIImage.init(systemName: image)
+            }
+        }
+    }
+    
+    @IBAction func sliderValueChanged(_ sender: UISlider) {
+        print("sender.value = \(sender.value)")
+        let playerItem:AVPlayerItem? = player.currentItem
+        player.seek(to: CMTimeMakeWithSeconds(Float64(sender.value), preferredTimescale: playerItem?.asset.duration.timescale ?? 0))
+        self.lblMusicCurrentDuration.text = secondToTimeFormated(value: Int(sender.value))
     }
     
     @IBAction func setFolderToLoad(_ sender: Any) {
@@ -91,34 +164,231 @@ class ViewController: UIViewController {
         self.present(documentPicker, animated: true, completion: nil)
     }
     
+    @IBAction func segmentedOnValueChanged(_ sender: UISegmentedControl) {
+        UIView.animate(withDuration: 0.3) { [weak self] in
+            self?.vTabListMusic.isHidden = sender.selectedSegmentIndex == 1
+            self?.vTabHistory.isHidden = sender.selectedSegmentIndex == 0
+        }
+    }
+    
 
-    @objc func onTimerCalled() -> Void {
-        if (player.currentItem != nil) {
-            let playerItem:AVPlayerItem? = player.currentItem
-            let totalDuration = Float(playerItem?.asset.duration.value ?? 0) / Float(playerItem?.asset.duration.timescale ?? 0)
-            let currentDuration = Float(player.currentTime().seconds)
-            
-            self.lblMusicCurrentDuration.text = secondToTimeFormated(value: Int(currentDuration))
-            self.progressMusic.progress = currentDuration/totalDuration
-            
-            if (currentDuration==totalDuration) {
-                var arr = [[String: String]]()
-                if (playType == .fromFolder) {
-                    arr = listFolderMusic
-                } else {
-                    arr = listHistoryMusic
+    // MARK: Music Player Action
+    
+    func playMusicAtIndex(index: Int) -> Void {
+        resetInterface()
+        
+        let music: [String: String]?
+        
+        switch playType {
+        case .fromFolder:
+            music = listFolderMusic[index]
+            break
+        default:
+            music = listHistoryMusic[index]
+            break
+        }
+        if (music==nil) {
+            return
+        }
+        
+        playerIndex = index
+        
+        let urlPath = music?["urlPath"]
+        let item = music?["item"]
+        let fullPath = "\(urlPath ?? "")\(item ?? "")"
+        
+        let playerAsset = AVAsset(url: URL(fileURLWithPath: fullPath))
+        let playerItem = AVPlayerItem(asset: playerAsset)
+        
+        var title = ""
+        var artist = ""
+        var albumName = ""
+        var artwork: UIImage?
+        
+        let metadataList = playerItem.asset.commonMetadata
+        for item in metadataList {
+            if item.commonKey == nil{
+                continue
+            }
+
+            if let key = item.commonKey, let value = item.value {
+                print(key)
+                print(value)
+                if key.rawValue == "title" {
+                    title = value as! String
                 }
-                if (arr.count>0) {
-                    if (playerIndex<arr.count-1) {
-                        playMusicAtIndex(index: playerIndex+1)
-                        playerIndex += 1;
-                    } else {
-                        playMusicAtIndex(index: 0)
+//                if key.rawValue == "type" {
+//                    let text = value
+//                }
+                if key.rawValue == "artist" {
+                    artist = value as! String
+                }
+                if key.rawValue == "albumName" {
+                    albumName = value as! String
+                }
+                if key.rawValue == "artwork" {
+                    if let audioImage = UIImage(data: value as! Data) {
+                        artwork = audioImage
                     }
                 }
             }
         }
         
+        lblSongName.text = title.count > 0 ? title : item
+        lblAlbumName.text = albumName.count > 0 ? albumName : "Unknown Album"
+        ivMusicThumbnail.image = artwork
+        
+        let totalDuration = Int(playerItem.asset.duration.value) / Int(playerItem.asset.duration.timescale)
+        print("totalDuration = \(totalDuration)")
+        self.lblMusicTotalDuration.text = secondToTimeFormated(value: totalDuration)
+        self.progressMusic.maximumValue = Float(totalDuration)
+        self.progressMusic.value = 0
+        
+        NotificationCenter.default.removeObserver(self, name: NSNotification.Name.AVPlayerItemDidPlayToEndTime, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(musicPlayDidEnd), name: NSNotification.Name.AVPlayerItemDidPlayToEndTime, object: nil)
+        playerTimer?.invalidate()
+        playerTimer = Timer.scheduledTimer(timeInterval: 0.2, target: self, selector: #selector(onTimerCalled), userInfo: nil, repeats: true)
+        
+        player = AVPlayer(playerItem: playerItem)
+        player.play()
+        
+        if #available(iOS 10.0, *) {
+            player.addObserver(self, forKeyPath: "timeControlStatus", options: [.old, .new], context: nil)
+        } else {
+            player.addObserver(self, forKeyPath: "rate", options: [.old, .new], context: nil)
+        }
+        player.currentItem?.addObserver(self, forKeyPath: "duration", options: [.old, .new], context: nil)
+        
+        let toolbarItems = self.toolbarItems ?? [UIBarButtonItem]()
+        for toolbarItem in toolbarItems {
+            if (toolbarItems.firstIndex(of: toolbarItem) == 4) {
+                toolbarItem.image = UIImage.init(systemName: "pause.fill")
+            }
+        }
+        
+        if (playType == .fromFolder) {
+            tableFolderMusic.selectRow(at: IndexPath(row: index, section: 0), animated: true, scrollPosition: .middle)
+        } else {
+            tableHistory.selectRow(at: IndexPath(row: index, section: 0), animated: true, scrollPosition: .middle)
+        }
+        
+        if (playType == .fromFolder) {
+            addHistory(value: listFolderMusic[index])
+        }
+        setupOrReloadNowPlayingCenter()
+    }
+    
+    func pauseTrack() {
+        if (player.currentItem != nil) {
+            player.pause()
+            playerTimer?.invalidate()
+            
+            let toolbarItems = self.toolbarItems ?? [UIBarButtonItem]()
+            for toolbarItem in toolbarItems {
+                if (toolbarItems.firstIndex(of: toolbarItem) == 4) {
+                    toolbarItem.image = UIImage.init(systemName: "play.fill")
+                }
+            }
+            setupOrReloadNowPlayingCenter()
+        }
+    }
+    
+    func playTrack() {
+        if (player.currentItem != nil) {
+            player.play()
+            playerTimer?.invalidate()
+            playerTimer = Timer.scheduledTimer(timeInterval: 0.2, target: self, selector: #selector(onTimerCalled), userInfo: nil, repeats: true)
+            let toolbarItems = self.toolbarItems ?? [UIBarButtonItem]()
+            for toolbarItem in toolbarItems {
+                if (toolbarItems.firstIndex(of: toolbarItem) == 4) {
+                    toolbarItem.image = UIImage.init(systemName: "pause.fill")
+                }
+            }
+            setupOrReloadNowPlayingCenter()
+        }
+    }
+    
+    func restartTrack() {
+        if (player.currentItem != nil) {
+            player.seek(to: .zero)
+        }
+    }
+    
+    func previousTrack() {
+        var arr = [[String: String]]()
+        if (self.playType == .fromFolder) {
+            arr = self.listFolderMusic
+        } else {
+            arr = self.listHistoryMusic
+        }
+        if (arr.count>0) {
+            if (self.playerIndex>0) {
+                self.playMusicAtIndex(index: self.playerIndex-1)
+            } else {
+                self.playMusicAtIndex(index: arr.count-1)
+            }
+        }
+    }
+    
+    func nextTrack() {
+        var arr = [[String: String]]()
+        if (self.playType == .fromFolder) {
+            arr = self.listFolderMusic
+        } else {
+            arr = self.listHistoryMusic
+        }
+        if (arr.count>0) {
+            if (self.playerIndex<arr.count-1) {
+                self.playMusicAtIndex(index: self.playerIndex+1)
+            } else {
+                self.playMusicAtIndex(index: 0)
+            }
+        }
+    }
+    
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+        if object as AnyObject? === player {
+            if keyPath == "status" {
+                //                if player.status == .readyToPlay {
+                //                    player.play()
+                //                }
+            } else if keyPath == "timeControlStatus" {
+                if #available(iOS 10.0, *) {
+                    setupOrReloadNowPlayingCenter()
+                }
+            } else if keyPath == "rate" {
+                //                if avPlayer.rate > 0 {
+                //                    videoCell?.muteButton.isHidden = false
+                //                } else {
+                //                    videoCell?.muteButton.isHidden = true
+                //                }
+            }
+        } else if object as AnyObject? === player.currentItem {
+            if keyPath == "duration" {
+                setupOrReloadNowPlayingCenter()
+                print("change = \(String(describing: change))")
+            }
+        }
+    }
+    
+    @objc func onTimerCalled() -> Void {
+        if (progressMusic.isTouchInside) {
+            return
+        }
+        if (player.currentItem != nil) {
+            let currentDuration = Float(player.currentTime().seconds)
+            self.lblMusicCurrentDuration.text = secondToTimeFormated(value: Int(currentDuration))
+            self.progressMusic.value = currentDuration
+        }
+    }
+    
+    @objc func musicPlayDidEnd() {
+        print("musicPlayDidEnd")
+        if (repeart) {
+            self.playMusicAtIndex(index: playerIndex)
+        } else {
+            self.nextTrack()
+        }
     }
     
     func secondToTimeFormated(value: Int) -> String {
@@ -128,13 +398,6 @@ class ViewController: UIViewController {
         
         let durationString = "\(hour<10 ? "0\(hour)":"\(hour)"):\(minute<10 ? "0\(minute)":"\(minute)"):\(second<10 ? "0\(second)":"\(second)")"
         return durationString
-    }
-    
-    @IBAction func segmentedOnValueChanged(_ sender: UISegmentedControl) {
-        UIView.animate(withDuration: 0.3) { [weak self] in
-            self?.vTabListMusic.isHidden = sender.selectedSegmentIndex == 1
-            self?.vTabHistory.isHidden = sender.selectedSegmentIndex == 0
-        }
     }
     
     func addHistory(value: [String:String]) -> Void {
@@ -165,13 +428,13 @@ class ViewController: UIViewController {
             let string = String(data: data, encoding: String.Encoding.utf8)
             UserDefaults.standard.set(string, forKey: key)
             
-            reloadTableLog()
+            reloadTableHistory()
         } catch {
             print(error.localizedDescription)
         }
     }
     
-    func reloadTableLog() -> Void {
+    func reloadTableHistory() -> Void {
         let key = "history"
         let oldHistory = UserDefaults.standard.string(forKey: key) ?? ""
         var arrHistory = [[String: String]]()
@@ -188,108 +451,20 @@ class ViewController: UIViewController {
         self.tableHistory.reloadData()
     }
     
-    func playMusicAtIndex(index: Int) -> Void {
-        resetInterface()
-        
-        let music: [String: String]?
-        
-        if (playType == .fromFolder) {
-            music = listFolderMusic[index]
-        } else {
-            music = listHistoryMusic[index]
-        }
-        if (music==nil) {
-            return
-        }
-        
-        let urlPath = music?["urlPath"]
-        let item = music?["item"]
-        let fullPath = "\(urlPath ?? "")\(item ?? "")"
-        
-        let playerAsset = AVAsset(url: URL(fileURLWithPath: fullPath))
-        let playerItem = AVPlayerItem(asset: playerAsset)
-        
-        let metadataList = playerItem.asset.commonMetadata
-        for item in metadataList {
-            if item.commonKey == nil{
-                continue
-            }
-
-            if let key = item.commonKey, let value = item.value {
-                print(key)
-                print(value)
-                if key.rawValue == "title" {
-                    let text = value as? String
-                    lblSongName.text = text
-                }
-                if key.rawValue == "type" {
-                    let text = value as? String
-                }
-                if key.rawValue == "albumName" {
-                    let text = value as? String
-                    lblAlbumName.text = text
-                }
-                if key.rawValue == "artwork" {
-                    if let audioImage = UIImage(data: value as! Data) {
-                        let image = audioImage
-                        ivMusicThumbnail.image = image
-                    }
-                }
-            }
-        }
-        
-        if (lblSongName.text?.count==0) {
-            lblSongName.text = item;
-        }
-        
-        if (lblAlbumName.text?.count==0) {
-            lblAlbumName.text = "Không biết album";
-        }
-        
-        let totalDuration = Int(playerItem.asset.duration.value) / Int(playerItem.asset.duration.timescale)
-        print("totalDuration = \(totalDuration)")
-        self.lblMusicTotalDuration.text = secondToTimeFormated(value: totalDuration)
-        
-        player = AVPlayer(playerItem: playerItem)
-        player.play()
-        
-        playerTimer?.invalidate()
-        playerTimer = Timer.scheduledTimer(timeInterval: 0.2, target: self, selector: #selector(onTimerCalled), userInfo: nil, repeats: true)
-        
-        if (playType == .fromFolder) {
-            tableFolderMusic.selectRow(at: IndexPath(row: index, section: 0), animated: true, scrollPosition: .middle)
-        } else {
-            tableHistory.selectRow(at: IndexPath(row: index, section: 0), animated: true, scrollPosition: .middle)
-        }
-        
-        if (playType == .fromFolder) {
-            addHistory(value: listFolderMusic[index])
-        }
-        
-        setupRemoteTransportControls()
-        setupNowPlaying()
-    }
-    
     func setupRemoteTransportControls() {
         // Get the shared MPRemoteCommandCenter
         let commandCenter = MPRemoteCommandCenter.shared()
         
         // Add handler for Play Command
         commandCenter.playCommand.addTarget { [unowned self] event in
-            if self.player.rate == 0.0 {
-                self.pauseTrack()
-                return .success
-            }
-            return .commandFailed
+            self.playTrack()
+            return .success
         }
 
         // Add handler for Pause Command
         commandCenter.pauseCommand.addTarget { [unowned self] event in
-            if self.player.rate == 1.0 {
-                self.playTrack()
-                return .success
-            }
-            return .commandFailed
+            self.pauseTrack()
+            return .success
         }
         
         commandCenter.previousTrackCommand.addTarget { [unowned self] event in
@@ -303,62 +478,7 @@ class ViewController: UIViewController {
         }
     }
     
-    func pauseTrack() {
-        if (player.currentItem != nil) {
-            player.pause()
-            playerTimer?.invalidate()
-        }
-    }
-    
-    func playTrack() {
-        if (player.currentItem != nil) {
-            player.play()
-            playerTimer?.invalidate()
-            playerTimer = Timer.scheduledTimer(timeInterval: 0.2, target: self, selector: #selector(onTimerCalled), userInfo: nil, repeats: true)
-        }
-    }
-    
-    func restartTrack() {
-        if (player.currentItem != nil) {
-            player.seek(to: .zero)
-        }
-    }
-    
-    func previousTrack() {
-        var arr = [[String: String]]()
-        if (self.playType == .fromFolder) {
-            arr = self.listFolderMusic
-        } else {
-            arr = self.listHistoryMusic
-        }
-        if (arr.count>0) {
-            if (self.playerIndex>0) {
-                self.playMusicAtIndex(index: self.playerIndex-1)
-                self.playerIndex -= 1;
-            } else {
-                self.playMusicAtIndex(index: arr.count-1)
-            }
-        }
-    }
-    
-    func nextTrack() {
-        var arr = [[String: String]]()
-        if (self.playType == .fromFolder) {
-            arr = self.listFolderMusic
-        } else {
-            arr = self.listHistoryMusic
-        }
-        if (arr.count>0) {
-            if (self.playerIndex<arr.count-1) {
-                self.playMusicAtIndex(index: self.playerIndex+1)
-                self.playerIndex += 1
-            } else {
-                self.playMusicAtIndex(index: 0)
-            }
-        }
-    }
-    
-    func setupNowPlaying() {
+    func setupOrReloadNowPlayingCenter() {
         // Define Now Playing Info
         let playerItem :AVPlayerItem? = player.currentItem
         
@@ -379,6 +499,8 @@ class ViewController: UIViewController {
         // Set the metadata
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
     }
+    
+    
 }
 
 extension ViewController: UIDocumentPickerDelegate {
@@ -409,7 +531,6 @@ extension ViewController: UIDocumentPickerDelegate {
                         ])
                     }
                     self.tableFolderMusic.reloadData()
-                    self.lblFolderPath.text = urlPath
                     
                     if (listFolderMusic.count>0) {
                         playMusicAtIndex(index: 0)
