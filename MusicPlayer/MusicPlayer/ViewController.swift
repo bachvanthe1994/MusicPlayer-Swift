@@ -201,7 +201,7 @@ class ViewController: UIViewController {
         let playerItem = AVPlayerItem(asset: playerAsset)
         
         var title = ""
-        var artist = ""
+//        var artist = ""
         var albumName = ""
         var artwork: UIImage?
         
@@ -220,9 +220,9 @@ class ViewController: UIViewController {
 //                if key.rawValue == "type" {
 //                    let text = value
 //                }
-                if key.rawValue == "artist" {
-                    artist = value as! String
-                }
+//                if key.rawValue == "artist" {
+//                    artist = value as! String
+//                }
                 if key.rawValue == "albumName" {
                     albumName = value as! String
                 }
@@ -414,7 +414,7 @@ class ViewController: UIViewController {
             }
         }
         var i = 0
-        while i == arrHistory.count {
+        while i == arrHistory.count-1 {
             if (arrHistory[i] == value) {
                 arrHistory.remove(at: i)
                 i -= 1
