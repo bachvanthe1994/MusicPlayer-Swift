@@ -1,10 +1,12 @@
 # MusicTest-Swift
 
-#1 LearningSwiftbasic Music player
+#1
+#LernSwift 
+#MusicPlayer
 
 - Pick a folder to load mp3 files
 - NSUserDefault to save history musics
-- Play/Pause/Restart Music
-- Show music notification in lock screen
+- Play, Pause, Previous, Next, Repeat, Share
+- Show music notification in lock screen with MPNowPlayingInfoCenter.default().nowPlayingInfo
 
-<img src="https://raw.githubusercontent.com/bachvanthe1994/MusicTest-Swift/master/Music%20Test/Screenshot/image1.png" width="300" height="650">
+<img src="https://raw.githubusercontent.com/bachvanthe1994/MusicPlayer-Swift/master/MusicPlayer/Screenshot/image1.png" width="300" height="650">
